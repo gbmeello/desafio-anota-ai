@@ -1,38 +1,33 @@
 package com.gabrielmello.desafioanotaai.services;
 
-import com.gabrielmello.desafioanotaai.domain.category.Category;
-import com.gabrielmello.desafioanotaai.domain.category.CategoryDTO;
+
 import com.gabrielmello.desafioanotaai.domain.category.exceptions.CategoryNotFoundException;
 import com.gabrielmello.desafioanotaai.domain.product.Product;
 import com.gabrielmello.desafioanotaai.domain.product.ProductDTO;
 import com.gabrielmello.desafioanotaai.domain.product.exceptions.ProductNotFoundException;
-import com.gabrielmello.desafioanotaai.repositories.CategoryRepository;
 import com.gabrielmello.desafioanotaai.repositories.ProductRepository;
+import com.gabrielmello.desafioanotaai.services.aws.AwsSnsService;
+import com.gabrielmello.desafioanotaai.services.aws.MessageDTO;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class ProductService {
-
-    private CategoryService categoryService;
-
-    private ProductRepository repository;
-
-    public ProductService(CategoryService categoryService, ProductRepository productRepository){
-
-        this.categoryService = categoryService;
-        this.repository = productRepository;
-
-    }
+    private final CategoryService categoryService;
+    private final ProductRepository repository;
+    private final AwsSnsService snsService;
 
     public Product insert(ProductDTO productData){
-        Category category = this.categoryService.getById(productData.categoryId())
+        this.categoryService.getById(productData.categoryId())
                 .orElseThrow(CategoryNotFoundException::new);
-
         Product newProduct = new Product(productData);
-        newProduct.setCategory(category);
+
         this.repository.save(newProduct);
+
+        this.snsService.publish(new MessageDTO(newProduct.toString()));
+
         return newProduct;
     }
 
@@ -41,24 +36,26 @@ public class ProductService {
                 .orElseThrow(ProductNotFoundException::new);
 
         this.categoryService.getById(productData.categoryId())
-                .ifPresent(product::setCategory);
+                .orElseThrow(CategoryNotFoundException::new);
 
         if(!productData.title().isEmpty()) product.setTitle(productData.title());
         if(!productData.description().isEmpty()) product.setDescription(productData.description());
         if(!(productData.price() == null)) product.setPrice(productData.price());
+        if(!(productData.categoryId() == null)) product.setCategory(productData.categoryId());
 
         this.repository.save(product);
+
+        this.snsService.publish(new MessageDTO(product.toString()));
 
         return product;
     }
 
     public void delete(String id){
-
         Product product = this.repository.findById(id)
                 .orElseThrow(ProductNotFoundException::new);
 
-
         this.repository.delete(product);
+        this.snsService.publish(new MessageDTO(product.deleteToString()));
     }
 
     public List<Product> getAll(){
